@@ -4,7 +4,7 @@ import { userSchema } from './schemas';
 export default {
   openapi: '3.0.0',
   info: {
-    title: 'Boilerplate API',
+    title: 'Devs Impacto API',
     description: 'API para as aplicações de [Projeto]',
     version: '0.0.1',
   },

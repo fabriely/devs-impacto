@@ -1,10 +1,12 @@
 import { Router } from 'express';
 
-import WhatsAppBotRoutes from './WhatsAppBotRoutes';
+import BaileysWhatsAppRoutes from './BaileysWhatsAppRoutes';
 
 const router = Router();
 
-router.use('/whatsapp', WhatsAppBotRoutes);
+// Rotas do WhatsApp Bot (Baileys direto - novo)
+router.use('/api/baileys/', BaileysWhatsAppRoutes);
+
 router.route('/').get((_, res) => {
   res.status(200).send('welcome to backend node ');
 });

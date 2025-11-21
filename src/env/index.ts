@@ -9,11 +9,6 @@ const envSchema = z.object({
   
   // OpenAI
   OPENAI_API_KEY: z.string(),
-  
-  // Evolution API (WhatsApp)
-  EVOLUTION_API_URL: z.string(),
-  EVOLUTION_API_KEY: z.string(),
-  EVOLUTION_INSTANCE_NAME: z.string(),
 });
 
 const devEnvSchema = envSchema.extend({
@@ -22,13 +17,7 @@ const devEnvSchema = envSchema.extend({
   DATABASE_PORT: z.coerce.number(),
   DATABASE_USER: z.string(),
   DATABASE_PASSWORD: z.string(),
-  DATABASE_DB: z.string(),
-
-  DATABASE_TEST_HOST: z.string(),
-  DATABASE_TEST_PORT: z.coerce.number(),
-  DATABASE_TEST_USER: z.string(),
-  DATABASE_TEST_PASSWORD: z.string(),
-  DATABASE_TEST_DB: z.string(),
+  DATABASE_DB: z.string()
 });
 
 const envValidation =

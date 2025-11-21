@@ -307,7 +307,7 @@ Envia resumo de PL para um número.
 
 ```bash
 # Com Docker
-docker compose up build --volumes --watch
+docker compose up --build --watch
 
 # Ou local
 pnpm dev

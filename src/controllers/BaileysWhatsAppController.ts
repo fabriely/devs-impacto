@@ -9,11 +9,14 @@ import { Request, Response } from 'express';
 import type { WAMessage } from 'baileys';
 import whatsappService from '../services/whatsapp.service';
 import openaiService from '../services/openai.service';
+import plCurationService from '../services/pl-curation.service';
 
 interface WhatsAppSession {
-  step: 'idle' | 'waiting_question' | 'waiting_opinion';
+  step: 'idle' | 'waiting_question' | 'waiting_opinion' | 'waiting_area_selection' | 'waiting_curation_audio_choice';
   plSummary?: string;
   plNumber?: string;
+  selectedArea?: string;
+  curationPLs?: Array<{ numero: string; ano: string; ementa: string; citizenSummary: string }>;
 }
 
 // Armazena o estado da conversa de cada usuário
@@ -33,7 +36,7 @@ class BaileysWhatsAppController {
    */
   private async handleIncomingMessage(msg: WAMessage): Promise<void> {
     try {
-      const remoteJid = msg.key.remoteJid;
+      const { remoteJid } = msg.key;
       if (!remoteJid) return;
 
       // Ignora mensagens de grupos
@@ -67,13 +70,11 @@ class BaileysWhatsAppController {
       }
 
       // Processa áudio
-      const audioUrl = this.extractAudioUrl(msg);
-      if (audioUrl) {
-        await this.handleAudioMessage(phoneNumber, audioUrl, userName, remoteJid);
-        return;
+      const hasAudio = this.hasAudio(msg);
+      if (hasAudio) {
+        await this.handleAudioMessage(phoneNumber, msg, userName, remoteJid);
       }
 
-      console.log('ℹ️ Tipo de mensagem não suportado:', Object.keys(msg.message || {})[0]);
     } catch (error) {
       console.error('❌ Erro ao processar mensagem:', error);
     }
@@ -95,14 +96,10 @@ class BaileysWhatsAppController {
   }
 
   /**
-   * Extrai URL do áudio de uma mensagem
+   * Verifica se a mensagem contém áudio
    */
-  private extractAudioUrl(msg: WAMessage): string | null {
-    if (msg.message?.audioMessage?.url) {
-      return msg.message.audioMessage.url;
-    }
-
-    return null;
+  private hasAudio(msg: WAMessage): boolean {
+    return !!(msg.message?.audioMessage);
   }
 
   /**
@@ -140,6 +137,8 @@ class BaileysWhatsAppController {
           await whatsappService.sendText(jid, 'Para registrar opinião, primeiro veja um PL selecionando a opção 1️⃣');
           await this.sendWelcomeMessage(jid, userName);
         } else if (textLower === '4') {
+          await this.showAreaSelectionMenu(jid, phoneNumber);
+        } else if (textLower === '5') {
           await whatsappService.sendText(jid, 'Dashboard público em breve! 🏗️');
           await this.sendWelcomeMessage(jid, userName);
         } else {
@@ -156,6 +155,14 @@ class BaileysWhatsAppController {
         await this.handleOpinion(jid, text, session, phoneNumber);
         break;
 
+      case 'waiting_area_selection':
+        await this.handleAreaSelection(jid, text, session, phoneNumber);
+        break;
+
+      case 'waiting_curation_audio_choice':
+        await this.handleCurationAudioChoice(jid, text, session, phoneNumber);
+        break;
+
       default:
         await this.sendWelcomeMessage(jid, userName);
     }
@@ -166,19 +173,19 @@ class BaileysWhatsAppController {
    */
   private async handleAudioMessage(
     phoneNumber: string,
-    audioUrl: string,
+    msg: WAMessage,
     userName: string,
     jid: string,
   ): Promise<void> {
     try {
       await whatsappService.sendText(jid, '🎧 Recebendo seu áudio... Um momento!');
 
-      // Baixa o áudio
-      const axios = (await import('axios')).default;
-      const response = await axios.get(audioUrl, { responseType: 'arraybuffer' });
-      const audioBuffer = Buffer.from(response.data);
+      // Baixa o áudio usando downloadMediaMessage do Baileys
+      const audioBuffer = await whatsappService.downloadMedia(msg);
+      
+      console.log(`✅ Áudio baixado: ${audioBuffer.length} bytes`);
 
-      // Transcreve com Whisper
+      // Transcreve com Whisper (WhatsApp envia áudio em formato opus/ogg)
       const transcription = await openaiService.transcribeAudio(audioBuffer, 'audio.ogg');
 
       await whatsappService.sendText(jid, `📝 Você disse: "${transcription}"`);
@@ -209,7 +216,8 @@ Estou aqui para te ajudar a entender Projetos de Lei de forma simples e particip
 1️⃣ Ver novo PL
 2️⃣ Fazer pergunta sobre PL 
 3️⃣ Registrar opinião
-4️⃣ Ver dashboard público
+4️⃣ Gerar curadoria de PLs
+5️⃣ Ver dashboard público
 
 Digite o número da opção ou envie uma mensagem de *áudio* que eu entendo! 🎙️`;
 
@@ -365,6 +373,265 @@ Digite o número da opção ou envie uma mensagem de *áudio* que eu entendo! �
     const updatedSession: WhatsAppSession = { ...session, step: 'idle' };
     userSessions.set(phoneNumber, updatedSession);
     await this.sendWelcomeMessage(jid, 'Cidadão');
+  }
+
+  /**
+   * Mostra menu de seleção de área de interesse
+   */
+  private async showAreaSelectionMenu(jid: string, phoneNumber: string): Promise<void> {
+    const message = `🎯 *Curadoria de Projetos de Lei*
+
+Vou buscar os PLs mais relevantes para você!
+
+📚 *Escolha uma área de interesse:*
+
+1️⃣ Saúde
+2️⃣ Educação
+3️⃣ Segurança
+4️⃣ Economia
+5️⃣ Trabalho
+6️⃣ Transporte
+7️⃣ Meio Ambiente
+8️⃣ Direitos
+9️⃣ Tecnologia
+🔟 Todos (geral)
+
+Digite o número da área que você quer acompanhar:`;
+
+    await whatsappService.sendText(jid, message);
+
+    // Atualiza estado da sessão
+    const session = this.getSession(phoneNumber);
+    const updatedSession: WhatsAppSession = { ...session, step: 'waiting_area_selection' };
+    userSessions.set(phoneNumber, updatedSession);
+  }
+
+  /**
+   * Processa seleção de área e gera curadoria
+   */
+  private async handleAreaSelection(
+    jid: string,
+    text: string,
+    session: WhatsAppSession,
+    phoneNumber: string,
+  ): Promise<void> {
+    const textLower = text.toLowerCase().trim();
+
+    // Mapeia opções para áreas
+    let selectedArea: string | undefined;
+    
+    switch (textLower) {
+      case '1':
+        selectedArea = 'saúde';
+        break;
+      case '2':
+        selectedArea = 'educação';
+        break;
+      case '3':
+        selectedArea = 'segurança';
+        break;
+      case '4':
+        selectedArea = 'economia';
+        break;
+      case '5':
+        selectedArea = 'trabalho';
+        break;
+      case '6':
+        selectedArea = 'transporte';
+        break;
+      case '7':
+        selectedArea = 'meio-ambiente';
+        break;
+      case '8':
+        selectedArea = 'direitos';
+        break;
+      case '9':
+        selectedArea = 'tecnologia';
+        break;
+      case '10':
+        selectedArea = 'todos';
+        break;
+      default:
+        selectedArea = undefined;
+    }
+
+    if (!selectedArea) {
+      await whatsappService.sendText(
+        jid,
+        '❌ Opção inválida. Por favor, escolha um número de 1 a 10.',
+      );
+      await this.showAreaSelectionMenu(jid, phoneNumber);
+      return;
+    }
+
+    // Mostra mensagem de carregamento
+    await whatsappService.sendText(
+      jid,
+      `🔍 Buscando PLs relevantes na área de *${selectedArea}*...\n\nIsso pode levar alguns segundos. Aguarde! ⏳`,
+    );
+
+    try {
+      // Busca PLs curados por área
+      const curatedPLs = selectedArea === 'todos'
+        ? await plCurationService.curatePLsForWeek({ limit: 5, minRelevanceScore: 60 })
+        : await plCurationService.getPLsByArea(selectedArea, 5);
+
+      if (curatedPLs.length === 0) {
+        await whatsappService.sendText(
+          jid,
+          `😔 Não encontrei PLs relevantes na área de *${selectedArea}* no momento.\n\nTente outra área ou volte mais tarde!`,
+        );
+        await this.sendWelcomeMessage(jid, 'Cidadão');
+        const updatedSession: WhatsAppSession = { ...session, step: 'idle' };
+        userSessions.set(phoneNumber, updatedSession);
+        return;
+      }
+
+      // Envia resumo da curadoria
+      let curationMessage = `✅ *Curadoria de PLs - ${selectedArea.toUpperCase()}*\n\n`;
+      curationMessage += `Encontrei *${curatedPLs.length} PLs relevantes* para você:\n\n`;
+
+      curatedPLs.forEach((pl, index) => {
+        curationMessage += `━━━━━━━━━━━━━━━\n`;
+        curationMessage += `*${index + 1}. ${pl.siglaTipo} ${pl.numero}/${pl.ano}*\n\n`;
+        curationMessage += `📝 ${pl.citizenSummary}\n\n`;
+        curationMessage += `⭐ Relevância: ${pl.relevanceScore.toFixed(0)}%\n`;
+        curationMessage += `🎯 Impacto: ${pl.impact.impactScore}/10\n`;
+        
+        // Formata urgência
+        let urgencyText = '🟢 Baixa';
+        if (pl.impact.urgency === 'high') {
+          urgencyText = '🔴 Alta';
+        } else if (pl.impact.urgency === 'medium') {
+          urgencyText = '🟡 Média';
+        }
+        curationMessage += `⚡ Urgência: ${urgencyText}\n`;
+        
+        if (pl.isTrending) {
+          curationMessage += `🔥 *Em destaque na mídia!*\n`;
+        }
+        
+        curationMessage += `\n📊 Situação: ${pl.situacao}\n`;
+        curationMessage += `\n`;
+      });
+
+      curationMessage += `━━━━━━━━━━━━━━━\n\n`;
+
+      await whatsappService.sendText(jid, curationMessage);
+
+      // Salva PLs na sessão e pergunta sobre áudio
+      const plsForAudio = curatedPLs.map(pl => ({
+        numero: pl.numero,
+        ano: pl.ano,
+        ementa: pl.ementa,
+        citizenSummary: pl.citizenSummary,
+      }));
+
+      const updatedSession: WhatsAppSession = { 
+        ...session, 
+        step: 'waiting_curation_audio_choice',
+        curationPLs: plsForAudio,
+      };
+      userSessions.set(phoneNumber, updatedSession);
+
+      // Pergunta se quer ouvir em áudio
+      await whatsappService.sendText(
+        jid,
+        `🎙️ *Quer ouvir um resumo em áudio?*\n\nVou narrar os principais PLs encontrados.\n\n1️⃣ Sim, quero ouvir\n2️⃣ Não, só texto mesmo`,
+      );
+
+    } catch (error) {
+      console.error('❌ Erro ao gerar curadoria:', error);
+      await whatsappService.sendText(
+        jid,
+        '❌ Ocorreu um erro ao buscar os PLs. Tente novamente mais tarde.',
+      );
+      await this.sendWelcomeMessage(jid, 'Cidadão');
+      const updatedSession: WhatsAppSession = { ...session, step: 'idle' };
+      userSessions.set(phoneNumber, updatedSession);
+    }
+  }
+
+  /**
+   * Processa escolha de áudio da curadoria
+   */
+  private async handleCurationAudioChoice(
+    jid: string,
+    text: string,
+    session: WhatsAppSession,
+    phoneNumber: string,
+  ): Promise<void> {
+    const textLower = text.toLowerCase().trim();
+
+    // Se não quer áudio
+    if (textLower === '2' || textLower.includes('não') || textLower.includes('nao')) {
+      await whatsappService.sendText(
+        jid,
+        '✅ Ok! Espero que as informações sejam úteis.\n\n💡 Digite "Menu" para ver outras opções!',
+      );
+      const updatedSession: WhatsAppSession = { ...session, step: 'idle', curationPLs: undefined };
+      userSessions.set(phoneNumber, updatedSession);
+      return;
+    }
+
+    // Se quer áudio
+    if (textLower === '1' || textLower.includes('sim')) {
+      if (!session.curationPLs || session.curationPLs.length === 0) {
+        await whatsappService.sendText(jid, '❌ Não encontrei os PLs salvos. Tente gerar a curadoria novamente.');
+        const updatedSession: WhatsAppSession = { ...session, step: 'idle', curationPLs: undefined };
+        userSessions.set(phoneNumber, updatedSession);
+        return;
+      }
+
+      await whatsappService.sendText(jid, '🎙️ Gerando áudio... Isso pode levar alguns segundos.');
+
+      try {
+        // Cria texto para narração
+        let audioText = 'Aqui está o resumo dos projetos de lei encontrados. ';
+        
+        session.curationPLs.forEach((pl, index) => {
+          // Gera resumo curto para cada PL
+          const plNumber = `Projeto de Lei ${pl.numero} de ${pl.ano}`;
+          audioText += `${index + 1}. ${plNumber}. ${pl.citizenSummary}. `;
+        });
+
+        audioText += 'Esses foram os principais projetos de lei. Para mais informações, acesse nossa plataforma.';
+
+        // Limita tamanho do texto (TTS tem limite)
+        if (audioText.length > 1500) {
+          audioText = `${audioText.substring(0, 1500)}... Para ver todos os detalhes, consulte o texto enviado anteriormente.`;
+        }
+
+        // Gera o áudio
+        const audioBuffer = await openaiService.generateAudio(audioText);
+
+        // Envia o áudio
+        await whatsappService.sendAudio(jid, audioBuffer);
+        
+        await whatsappService.sendText(
+          jid,
+          '✅ Áudio enviado! Espero que ajude você a entender melhor os PLs.\n\n💡 Digite "Menu" para ver outras opções!',
+        );
+
+      } catch (error) {
+        console.error('❌ Erro ao gerar/enviar áudio:', error);
+        await whatsappService.sendText(
+          jid,
+          '❌ Desculpe, não consegui gerar o áudio no momento. Tente novamente mais tarde.',
+        );
+      }
+
+      // Volta ao estado idle
+      const updatedSession: WhatsAppSession = { ...session, step: 'idle', curationPLs: undefined };
+      userSessions.set(phoneNumber, updatedSession);
+      return;
+    }
+
+    // Opção inválida
+    await whatsappService.sendText(
+      jid,
+      '❌ Opção inválida. Digite 1 para ouvir em áudio ou 2 para não ouvir.',
+    );
   }
 
   /**

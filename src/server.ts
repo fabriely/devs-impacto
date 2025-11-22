@@ -4,6 +4,7 @@ import './env';
 import app from './app';
 import '@database';
 import whatsappService from './services/whatsapp.service';
+import cronService from './services/cron.service';
 
 // Inicia o servidor HTTP
 app.listen(process.env.SERVER_PORT || 3001, async () => {
@@ -15,5 +16,13 @@ app.listen(process.env.SERVER_PORT || 3001, async () => {
     await whatsappService.start();
   } catch (error) {
     console.error('❌ Erro ao iniciar WhatsApp:', error);
+  }
+
+  // Inicia os jobs agendados
+  try {
+    console.log('\n⏰ Iniciando serviço de agendamento...');
+    cronService.initialize();
+  } catch (error) {
+    console.error('❌ Erro ao iniciar cron service:', error);
   }
 });

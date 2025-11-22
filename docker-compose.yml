@@ -22,9 +22,12 @@ services:
             - node_modules/
         - action: rebuild
           path: package.json
+    volumes:
+      - ./auth_state:/home/node/app/auth_state
+      - node_modules:/home/node/app/node_modules
 
   db:
-    image: postgres
+    image: postgres:16-alpine
     container_name: ${PROJECT_NAME}-db
     restart: unless-stopped
     env_file: .env
@@ -43,6 +46,7 @@ services:
       retries: 5
       start_period: 30s
       timeout: 10s
+
 volumes:
   pgdata:
   node_modules:

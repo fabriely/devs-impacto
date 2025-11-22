@@ -105,21 +105,6 @@ class CamaraAPIService {
   }
 
   /**
-   * Obtém o texto completo de uma proposição
-   */
-  async obterTextoCompleto(urlInteiroTeor: string): Promise<string> {
-    try {
-      // A URL do inteiro teor geralmente é um PDF
-      // Para simplificar, retornamos a URL
-      // Em produção, seria necessário baixar e extrair o texto do PDF
-      return urlInteiroTeor;
-    } catch (error) {
-      console.error('Erro ao obter texto completo:', error);
-      throw new Error('Erro ao buscar texto completo da proposição');
-    }
-  }
-
-  /**
    * Formata uma proposição para exibição
    */
   formatarProposicao(proposicao: ProposicaoDetalhada, autores: Autor[]): string {

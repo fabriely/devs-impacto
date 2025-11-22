@@ -12,6 +12,9 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends openssl \
 
 RUN mkdir -p /home/node/app/node_modules && chown -R node:node /home/node/app
 
+# Cria a pasta auth_state e configura permissões para o usuário node
+RUN mkdir -p /home/node/app/auth_state && chown -R node:node /home/node/app/auth_state
+
 WORKDIR /home/node/app
 
 ################################################################################

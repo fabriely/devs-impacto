@@ -67,13 +67,11 @@ class BaileysWhatsAppController {
       }
 
       // Processa áudio
-      const audioUrl = this.extractAudioUrl(msg);
-      if (audioUrl) {
-        await this.handleAudioMessage(phoneNumber, audioUrl, userName, remoteJid);
-        return;
+      const hasAudio = this.hasAudio(msg);
+      if (hasAudio) {
+        await this.handleAudioMessage(phoneNumber, msg, userName, remoteJid);
       }
 
-      console.log('ℹ️ Tipo de mensagem não suportado:', Object.keys(msg.message || {})[0]);
     } catch (error) {
       console.error('❌ Erro ao processar mensagem:', error);
     }
@@ -95,14 +93,10 @@ class BaileysWhatsAppController {
   }
 
   /**
-   * Extrai URL do áudio de uma mensagem
+   * Verifica se a mensagem contém áudio
    */
-  private extractAudioUrl(msg: WAMessage): string | null {
-    if (msg.message?.audioMessage?.url) {
-      return msg.message.audioMessage.url;
-    }
-
-    return null;
+  private hasAudio(msg: WAMessage): boolean {
+    return !!(msg.message?.audioMessage);
   }
 
   /**
@@ -166,19 +160,19 @@ class BaileysWhatsAppController {
    */
   private async handleAudioMessage(
     phoneNumber: string,
-    audioUrl: string,
+    msg: WAMessage,
     userName: string,
     jid: string,
   ): Promise<void> {
     try {
       await whatsappService.sendText(jid, '🎧 Recebendo seu áudio... Um momento!');
 
-      // Baixa o áudio
-      const axios = (await import('axios')).default;
-      const response = await axios.get(audioUrl, { responseType: 'arraybuffer' });
-      const audioBuffer = Buffer.from(response.data);
+      // Baixa o áudio usando downloadMediaMessage do Baileys
+      const audioBuffer = await whatsappService.downloadMedia(msg);
+      
+      console.log(`✅ Áudio baixado: ${audioBuffer.length} bytes`);
 
-      // Transcreve com Whisper
+      // Transcreve com Whisper (WhatsApp envia áudio em formato opus/ogg)
       const transcription = await openaiService.transcribeAudio(audioBuffer, 'audio.ogg');
 
       await whatsappService.sendText(jid, `📝 Você disse: "${transcription}"`);

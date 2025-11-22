@@ -16,6 +16,7 @@ import makeWASocket, {
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
   jidNormalizedUser,
+  downloadMediaMessage,
 } from 'baileys';
 import type { WASocket, ConnectionState, WAMessage } from 'baileys';
 import { Boom } from '@hapi/boom';
@@ -24,9 +25,7 @@ import qrcode from 'qrcode-terminal';
 import { EventEmitter } from 'events';
 
 // Tipos
-interface MessageHandler {
-  (message: WAMessage): Promise<void>;
-}
+type MessageHandler = (msg: WAMessage) => Promise<void>;
 
 class WhatsAppService extends EventEmitter {
   private sock: WASocket | null = null;
@@ -239,6 +238,24 @@ class WhatsAppService extends EventEmitter {
       console.log(`✅ Áudio enviado para ${to}`);
     } catch (error) {
       console.error('❌ Erro ao enviar áudio:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Baixa mídia de uma mensagem (áudio, imagem, etc)
+   */
+  async downloadMedia(message: WAMessage): Promise<Buffer> {
+    try {
+      const buffer = await downloadMediaMessage(
+        message,
+        'buffer',
+        {}
+      );
+      
+      return buffer as Buffer;
+    } catch (error) {
+      console.error('❌ Erro ao baixar mídia:', error);
       throw error;
     }
   }

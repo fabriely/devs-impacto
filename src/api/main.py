@@ -10,11 +10,15 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 import logging
 import os
+import json
 
 from src.core.database_init import init_database
 from src.core.processor import DataProcessor, ValidationError
 from src.core.classifier import AIClassifier
 from src.core.calculator import MetricsCalculator
+from src.models.database import ProjetoLei
+from src.services.realtime_sync import get_sync_service
+import random
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -238,6 +242,152 @@ async def get_lacuna_metrics(db: Session = Depends(get_db)):
         
     except Exception as e:
         logger.error(f"Error getting metrics: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# GET /projetos-lei/aleatorio endpoint
+class ProjetoLeiResponse(BaseModel):
+    id: int
+    pl_id: str
+    titulo: str
+    resumo: Optional[str]
+    tema_principal: str
+    temas_secundarios: Optional[List[str]]
+    cidade: Optional[str]
+    status: Optional[str]
+    url_fonte: Optional[str]
+
+
+@app.get("/api/v1/projetos-lei/aleatorio", response_model=ProjetoLeiResponse)
+async def get_random_pl(db: Session = Depends(get_db)):
+    """
+    Get a random legislative bill (PL) from the database.
+    
+    Used by WhatsApp bot to send random PLs to citizens.
+    """
+    try:
+        # Count total PLs
+        total_pls = db.query(ProjetoLei).count()
+        
+        if total_pls == 0:
+            raise HTTPException(status_code=404, detail="No legislative bills available")
+        
+        # Get random offset
+        random_offset = random.randint(0, total_pls - 1)
+        
+        # Fetch random PL
+        pl = db.query(ProjetoLei).offset(random_offset).first()
+        
+        if not pl:
+            raise HTTPException(status_code=404, detail="Could not retrieve random PL")
+        
+        # Parse JSON fields
+        temas_secundarios = []
+        if pl.temas_secundarios:
+            try:
+                temas_secundarios = json.loads(pl.temas_secundarios)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        
+        return ProjetoLeiResponse(
+            id=pl.id,
+            pl_id=pl.pl_id,
+            titulo=pl.titulo,
+            resumo=pl.resumo,
+            tema_principal=pl.tema_principal,
+            temas_secundarios=temas_secundarios,
+            cidade=pl.cidade,
+            status=pl.status,
+            url_fonte=pl.url_fonte
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting random PL: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# ========== Dashboard Endpoints ==========
+
+@app.get("/api/v1/dashboard/resumo")
+async def get_dashboard_resumo(db: Session = Depends(get_db)):
+    """
+    Get dashboard summary (KPIs for main dashboard page).
+    
+    Returns metrics like total citizens, interactions, proposals, engagement rate.
+    Used by Streamlit dashboard for main page.
+    """
+    try:
+        sync_service = get_sync_service(db)
+        resumo = sync_service.get_resumo_dashboard()
+        
+        return resumo
+        
+    except Exception as e:
+        logger.error(f"Error getting dashboard resumo: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/api/v1/dashboard/tendencia-interacoes")
+async def get_tendencia_interacoes(
+    dias: int = 7,
+    db: Session = Depends(get_db)
+):
+    """
+    Get interaction trend for the last N days.
+    
+    Args:
+        dias: Number of days to retrieve (default: 7)
+    
+    Returns:
+        List of dates with interaction counts
+    """
+    try:
+        # Validate dias parameter
+        if dias < 1 or dias > 90:
+            raise HTTPException(status_code=400, detail="dias must be between 1 and 90")
+        
+        sync_service = get_sync_service(db)
+        tendencia = sync_service.get_tendencia_interacoes(dias)
+        
+        return {"dias": dias, "dados": tendencia}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting interaction trend: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/api/v1/dashboard/propostas-populares")
+async def get_propostas_populares(
+    limite: int = 10,
+    db: Session = Depends(get_db)
+):
+    """
+    Get popular proposals (most recent or most engaged).
+    
+    Args:
+        limite: Number of proposals to return (default: 10)
+    
+    Returns:
+        List of proposals
+    """
+    try:
+        # Validate limite
+        if limite < 1 or limite > 100:
+            raise HTTPException(status_code=400, detail="limite must be between 1 and 100")
+        
+        sync_service = get_sync_service(db)
+        propostas = sync_service.get_propostas_populares(limite)
+        
+        return {"limite": limite, "total": len(propostas), "propostas": propostas}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting popular proposals: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

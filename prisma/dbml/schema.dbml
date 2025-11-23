@@ -9,3 +9,94 @@ Table User {
   email String [unique, not null]
   password String [not null]
 }
+
+Table cidadaos {
+  id Int [pk, increment]
+  telefone_hash String [unique, not null]
+  cidade String [not null]
+  grupo_inclusao String
+  temas_interesse String
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [default: `now()`, not null]
+  interacoes interacoes [not null]
+  propostas propostas_pauta [not null]
+
+  Note: 'Cidadão que interage com o sistema via WhatsApp'
+}
+
+Table projetos_lei {
+  id Int [pk, increment]
+  pl_id String [unique, not null]
+  titulo String [not null]
+  resumo String
+  tema_principal String [not null]
+  temas_secundarios String
+  cidade String
+  status String
+  url_fonte String
+  created_at DateTime [default: `now()`, not null]
+  interacoes interacoes [not null]
+
+  Note: 'Projeto de Lei sendo monitorado'
+}
+
+Table interacoes {
+  id Int [pk, increment]
+  cidadao_id Int [not null]
+  pl_id Int
+  tipo_interacao String [not null]
+  opiniao String
+  conteudo String
+  metadata String
+  timestamp DateTime [not null]
+  created_at DateTime [default: `now()`, not null]
+  cidadao cidadaos [not null]
+  projeto_lei projetos_lei
+
+  Note: 'Interação do cidadão com um PL'
+}
+
+Table propostas_pauta {
+  id Int [pk, increment]
+  cidadao_id Int [not null]
+  conteudo String [not null]
+  tipo_conteudo String [not null]
+  audio_url String
+  tema_principal String
+  temas_secundarios String
+  confidence_score Float
+  cidade String [not null]
+  grupo_inclusao String
+  embedding String
+  similaridade_grupo Int
+  timestamp DateTime [not null]
+  created_at DateTime [default: `now()`, not null]
+  cidadao cidadaos [not null]
+
+  Note: 'Proposta de pauta enviada por cidadão'
+}
+
+Table metricas_lacuna {
+  id Int [pk, increment]
+  tipo_agregacao String [not null]
+  chave String [not null]
+  demandas_cidadaos Int [not null]
+  pls_tramitacao Int [not null]
+  percentual_lacuna Float [not null]
+  classificacao String [not null]
+  periodo_inicio DateTime [not null]
+  periodo_fim DateTime [not null]
+  created_at DateTime [default: `now()`, not null]
+
+  indexes {
+    (tipo_agregacao, chave, periodo_inicio, periodo_fim) [unique]
+  }
+
+  Note: 'Métricas de lacuna legislativa (cache)'
+}
+
+Ref: interacoes.cidadao_id > cidadaos.id [delete: Cascade]
+
+Ref: interacoes.pl_id > projetos_lei.id [delete: Cascade]
+
+Ref: propostas_pauta.cidadao_id > cidadaos.id [delete: Cascade]

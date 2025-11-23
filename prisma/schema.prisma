@@ -19,3 +19,111 @@ model User {
   email    String  @unique
   password String
 }
+
+// ============================================
+// VOZ.LOCAL MODELS - Pipeline de Engajamento
+// ============================================
+
+/// Cidadão que interage com o sistema via WhatsApp
+model Cidadao {
+  id             Int              @id @default(autoincrement())
+  telefone_hash  String           @unique @db.VarChar(255)
+  cidade         String           @db.VarChar(100)
+  grupo_inclusao String?          @db.VarChar(50)
+  temas_interesse String?         @db.Text // JSON array
+  created_at     DateTime         @default(now()) @db.Timestamp(6)
+  updated_at     DateTime         @default(now()) @updatedAt @db.Timestamp(6)
+  
+  // Relationships
+  interacoes     Interacao[]
+  propostas      PropostaPauta[]
+  
+  @@map("cidadaos")
+}
+
+/// Projeto de Lei sendo monitorado
+model ProjetoLei {
+  id                 Int         @id @default(autoincrement())
+  pl_id              String      @unique @db.VarChar(100)
+  titulo             String      @db.VarChar(500)
+  resumo             String?     @db.Text
+  tema_principal     String      @db.VarChar(100)
+  temas_secundarios  String?     @db.Text // JSON array
+  cidade             String?     @db.VarChar(100)
+  status             String?     @db.VarChar(50)
+  url_fonte          String?     @db.VarChar(500)
+  created_at         DateTime    @default(now()) @db.Timestamp(6)
+  
+  // Relationships
+  interacoes         Interacao[]
+  
+  @@map("projetos_lei")
+}
+
+/// Interação do cidadão com um PL
+model Interacao {
+  id              Int         @id @default(autoincrement())
+  cidadao_id      Int
+  pl_id           Int?
+  tipo_interacao  String      @db.VarChar(50) // opiniao, visualizacao, reacao
+  opiniao         String?     @db.VarChar(20) // a_favor, contra, pular
+  conteudo        String?     @db.Text
+  metadata        String?     @db.Text // JSON object
+  timestamp       DateTime    @db.Timestamp(6)
+  created_at      DateTime    @default(now()) @db.Timestamp(6)
+  
+  // Relationships
+  cidadao         Cidadao     @relation(fields: [cidadao_id], references: [id], onDelete: Cascade)
+  projeto_lei     ProjetoLei? @relation(fields: [pl_id], references: [id], onDelete: Cascade)
+  
+  @@index([cidadao_id], name: "idx_interacoes_cidadao")
+  @@index([pl_id], name: "idx_interacoes_pl")
+  @@index([timestamp], name: "idx_interacoes_timestamp")
+  @@map("interacoes")
+}
+
+/// Proposta de pauta enviada por cidadão
+model PropostaPauta {
+  id                 Int       @id @default(autoincrement())
+  cidadao_id         Int
+  conteudo           String    @db.Text
+  tipo_conteudo      String    @db.VarChar(50) // texto, audio_transcrito
+  audio_url          String?   @db.VarChar(500)
+  tema_principal     String?   @db.VarChar(100)
+  temas_secundarios  String?   @db.Text // JSON array
+  confidence_score   Float?    @db.Real
+  cidade             String    @db.VarChar(100)
+  grupo_inclusao     String?   @db.VarChar(50)
+  embedding          String?   @db.Text // JSON array of floats
+  similaridade_grupo Int?      // ID do grupo de propostas similares
+  timestamp          DateTime  @db.Timestamp(6)
+  created_at         DateTime  @default(now()) @db.Timestamp(6)
+  
+  // Relationships
+  cidadao            Cidadao   @relation(fields: [cidadao_id], references: [id], onDelete: Cascade)
+  
+  @@index([cidadao_id], name: "idx_propostas_cidadao")
+  @@index([tema_principal], name: "idx_propostas_tema")
+  @@index([cidade], name: "idx_propostas_cidade")
+  @@index([timestamp], name: "idx_propostas_timestamp")
+  @@map("propostas_pauta")
+}
+
+/// Métricas de lacuna legislativa (cache)
+model MetricaLacuna {
+  id                Int       @id @default(autoincrement())
+  tipo_agregacao    String    @db.VarChar(50) // tema, grupo, cidade
+  chave             String    @db.VarChar(200) // valor específico
+  demandas_cidadaos Int
+  pls_tramitacao    Int
+  percentual_lacuna Float     @db.Real
+  classificacao     String    @db.VarChar(50) // Alta, Média, Baixa
+  periodo_inicio    DateTime  @db.Timestamp(6)
+  periodo_fim       DateTime  @db.Timestamp(6)
+  created_at        DateTime  @default(now()) @db.Timestamp(6)
+  
+  @@unique([tipo_agregacao, chave, periodo_inicio, periodo_fim], name: "unique_metrica")
+  @@index([tipo_agregacao], name: "idx_metricas_tipo")
+  @@index([created_at], name: "idx_metricas_created")
+  @@map("metricas_lacuna")
+}

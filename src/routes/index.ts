@@ -4,6 +4,7 @@ import BaileysWhatsAppRoutes from './BaileysWhatsAppRoutes';
 import MetricsRoutes from './MetricsRoutes';
 import ClassifierRoutes from './ClassifierRoutes';
 import ProcessorRoutes from './ProcessorRoutes';
+import PLCurationRoutes from './CuradoriaRoutes';
 
 const router = Router();
 
@@ -14,6 +15,9 @@ router.use('/api/baileys/', BaileysWhatsAppRoutes);
 router.use('/api/metrics', MetricsRoutes);
 router.use('/api/classifier', ClassifierRoutes);
 router.use('/api/processor', ProcessorRoutes);
+
+// Rotas de curadoria de PLs
+router.use('/api/pls/', PLCurationRoutes);
 
 router.route('/').get((_, res) => {
   res.status(200).send('welcome to backend node - Voz.Local Pipeline');

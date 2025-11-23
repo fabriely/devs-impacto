@@ -20,20 +20,26 @@ class OpenAIService {
         messages: [
           {
             role: 'system',
-            content: `Você é um assistente que explica Projetos de Lei de forma simples e acessível para cidadãos comuns. 
-                Seu objetivo é resumir o PL em linguagem clara, destacando:
-                - O que o PL propõe
-                - Como isso afeta a vida das pessoas
-                - Principais pontos positivos e negativos
-                Mantenha o resumo em até 300 palavras.`,
+            content: `Você é um assistente que explica Projetos de Lei de forma MUITO SIMPLES para brasileiros comuns.
+            REGRAS IMPORTANTES:
+            - Use linguagem coloquial e direta
+            - Máximo de 100 palavras (brasileiros leem pouco!)
+            - Foque no que REALMENTE importa para o cidadão
+            - Evite juridiquês e termos técnicos
+            - Seja objetivo: o que muda na prática?
+
+            Estrutura ideal:
+            1. Uma frase sobre o que o PL faz (15 palavras)
+            2. Como isso afeta você (30 palavras)
+            3. Ponto principal (20 palavras)`,
           },
           {
             role: 'user',
-            content: `Resuma este Projeto de Lei ${plNumber}:\n\n${plText}`,
+            content: `Resuma de forma BEM CURTA o ${plNumber}:\n\n${plText}`,
           },
         ],
         temperature: 0.7,
-        max_tokens: 500,
+        max_tokens: 200,
       });
 
       return completion.choices[0].message.content || 'Não foi possível gerar o resumo.';
@@ -112,6 +118,70 @@ class OpenAIService {
     } catch (error) {
       console.error('Erro ao gerar áudio:', error);
       throw new Error('Erro ao gerar áudio');
+    }
+  }
+
+  /**
+   * Gera resumo em áudio otimizado para narração (mais curto e natural)
+   */
+  async generateAudioSummary(plText: string, plNumber: string): Promise<string> {
+    try {
+      const completion = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `Você cria resumos de Projetos de Lei para serem NARRADOS em áudio.
+            REGRAS PARA NARRAÇÃO:
+            - Máximo 60 palavras (áudio precisa ser rápido!)
+            - Tom de conversa, como se estivesse falando com um amigo
+            - Sem emojis ou símbolos especiais
+            - Números por extenso quando possível
+            - Seja direto: o que muda na vida da pessoa?
+
+            Formato: Uma ou duas frases curtas e impactantes.`,
+          },
+          {
+            role: 'user',
+            content: `Crie um resumo CURTO para narração em áudio do ${plNumber}:\n\n${plText}`,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 150,
+      });
+
+      return completion.choices[0].message.content || 'Não foi possível gerar o resumo.';
+    } catch (error) {
+      console.error('Erro ao gerar resumo para áudio:', error);
+      throw new Error('Erro ao processar resumo para áudio');
+    }
+  }
+
+  /**
+   * Faz uma chamada genérica à API de chat
+   */
+  async chat(prompt: string, systemMessage?: string): Promise<string> {
+    try {
+      const completion = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: systemMessage || 'Você é um assistente útil.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 500,
+      });
+
+      return completion.choices[0].message.content || '';
+    } catch (error) {
+      console.error('Erro na chamada de chat:', error);
+      throw new Error('Erro ao processar chat');
     }
   }
 }

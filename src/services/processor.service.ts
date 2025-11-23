@@ -7,6 +7,7 @@
  * Migrated from Python to TypeScript.
  */
 
+// eslint-disable-next-line max-classes-per-file
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -272,6 +273,7 @@ export class DataProcessor {
       const opinioesPorTipo: Record<string, number> = {};
       opinioes.forEach((item) => {
         if (item.opiniao) {
+          // eslint-disable-next-line no-underscore-dangle
           opinioesPorTipo[item.opiniao] = item._count;
         }
       });

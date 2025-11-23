@@ -7,9 +7,13 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import AIClassifier, { TEMAS } from '../services/classifier.service';
+import { aiLimiter } from '../middlewares/rateLimiter';
 
 const router = Router();
 const aiClassifier = new AIClassifier();
+
+// Apply AI rate limiter to all routes in this router
+router.use(aiLimiter);
 
 // Validation schemas
 const classifyThemeSchema = z.object({

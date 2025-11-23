@@ -29,6 +29,7 @@ class WhatsAppIntegrationService {
    */
   private getCityFromPhone(phoneNumber: string): string {
     const ddd = phoneNumber.substring(0, 2);
+    console.log(`📞 Extraindo cidade do DDD: ${ddd}`);
     
     // Mapeamento simplificado de DDDs (expandir conforme necessário)
     const dddMap = new Map<string, string>([

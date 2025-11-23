@@ -6,9 +6,13 @@
 
 import { Router, Request, Response } from 'express';
 import MetricsCalculator from '../services/calculator.service';
+import { dataLimiter } from '../middlewares/rateLimiter';
 
 const router = Router();
 const metricsCalculator = new MetricsCalculator();
+
+// Apply data rate limiter to all routes
+router.use(dataLimiter);
 
 /**
  * GET /api/metrics/lacuna/theme

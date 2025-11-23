@@ -6,9 +6,13 @@
 
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { dataLimiter } from '../middlewares/rateLimiter';
 
 const router = Router();
 const prisma = new PrismaClient();
+
+// Apply data rate limiter to all routes
+router.use(dataLimiter);
 
 /**
  * GET /api/proposals/recent

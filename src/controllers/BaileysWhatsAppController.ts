@@ -834,16 +834,16 @@ Digite o número da área que você quer acompanhar:`;
 
     const message = `💡 *Envie sua proposta!*
 
-Você pode nos enviar uma sugestão de lei ou melhoria que gostaria de ver na sua cidade.
+    Você pode nos enviar uma sugestão de lei ou melhoria que gostaria de ver na sua cidade.
 
-📝 Escreva sua proposta em texto ou envie um *áudio* explicando sua ideia.
+    📝 Escreva sua proposta em texto ou envie um *áudio* explicando sua ideia.
 
-Exemplos:
-• "Precisamos de mais ciclovias na cidade"
-• "Quero mais segurança nas escolas"
-• "Precisamos de postos de saúde nos bairros"
+    Exemplos:
+    • "Precisamos de mais ciclovias na cidade"
+    • "Quero mais segurança nas escolas"
+    • "Precisamos de postos de saúde nos bairros"
 
-*Aguardo sua proposta!* ✨`;
+    *Aguardo sua proposta!* ✨`;
 
     await whatsappService.sendText(jid, message);
 

@@ -7,6 +7,7 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
+import twitterService from '../services/twitter.service';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -164,6 +165,23 @@ router.post('/camara-pls', async (req: Request, res: Response) => {
     });
 
     console.log(`New PL created: ${plId} (ID: ${newPL.id})`);
+
+    // Publica no Twitter sobre o novo PL
+    if (twitterService.isEnabled()) {
+      try {
+        await twitterService.tweetNewPL({
+          numero: plId,
+          titulo: titulo.substring(0, 100),
+          resumo: resumo?.substring(0, 200) || '',
+          tema: temaPrincipal,
+          autores: [], // Adicionar autores se disponível
+          urlCamara: urlFonte,
+        });
+      } catch (twitterError) {
+        console.error('Erro ao publicar no Twitter:', twitterError);
+        // Não falha a requisição se o Twitter falhar
+      }
+    }
 
     return res.status(201).json({
       success: true,

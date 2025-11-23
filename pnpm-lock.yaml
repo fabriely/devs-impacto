@@ -26,6 +26,9 @@ importers:
       '@types/cheerio':
         specifier: ^1.0.0
         version: 1.0.0
+      '@types/express-rate-limit':
+        specifier: ^6.0.2
+        version: 6.0.2(express@4.21.2)
       '@types/node-cron':
         specifier: ^3.0.11
         version: 3.0.11
@@ -53,6 +56,9 @@ importers:
       express:
         specifier: ^4.17.1
         version: 4.21.2
+      express-rate-limit:
+        specifier: ^8.2.1
+        version: 8.2.1(express@4.21.2)
       express-winston:
         specifier: ^4.2.0
         version: 4.2.0(winston@3.17.0)
@@ -1673,6 +1679,10 @@ packages:
   '@types/debug@4.1.7':
     resolution: {integrity: sha512-9AonUzyTjXXhEOa0DnqpzZi6VHlqKMswga9EXjpXnnqxwLtdvPPtlO8evrI5D9S6asFRCQ6v+wpiUKbw+vKqyg==}
 
+  '@types/express-rate-limit@6.0.2':
+    resolution: {integrity: sha512-e1xZLOOlxCDvplAGq7rDcXtbdBu2CWRsMjaIu1LVqGxWtKvwr884YE5mPs3IvHeG/OMDhf24oTaqG5T1bV3rBQ==}
+    deprecated: This is a stub types definition. express-rate-limit provides its own type definitions, so you do not need this installed.
+
   '@types/express-serve-static-core@4.19.6':
     resolution: {integrity: sha512-N4LZ2xG7DatVqhCZzOGb1Yi5lMbXSZcmdLDe9EzSndPV2HpWYWzRbaerl2n27irrm94EPpprqa8KpskPT085+A==}
 
@@ -3130,6 +3140,12 @@ packages:
     resolution: {integrity: sha512-2Zks0hf1VLFYI1kbh0I5jP3KHHyCHpkfyHBzsSXRFgl/Bg9mWYfMW8oD+PdMPlEwy5HNsR9JutYy6pMeOh61nw==}
     engines: {node: ^14.15.0 || ^16.10.0 || >=18.0.0}
 
+  express-rate-limit@8.2.1:
+    resolution: {integrity: sha512-PCZEIEIxqwhzw4KF0n7QF4QqruVTcF73O5kFKUnGOyjbCCgizBBiFaYpd/fnBLUMPw/BWw9OsiN7GgrNYr7j6g==}
+    engines: {node: '>= 16'}
+    peerDependencies:
+      express: '>= 4.11'
+
   express-winston@4.2.0:
     resolution: {integrity: sha512-EMD74g63nVHi7pFleQw7KHCxiA1pjF5uCwbCfzGqmFxs9KvlDPIVS3cMGpULm6MshExMT9TjC3SqmRGB9kb7yw==}
     engines: {node: '>= 6'}
@@ -3614,6 +3630,10 @@ packages:
   ioredis@5.8.2:
     resolution: {integrity: sha512-C6uC+kleiIMmjViJINWk80sOQw5lEzse1ZmvD+S/s8p8CWapftSaC+kocGTx6xrbrJ4WmYQGC08ffHLr6ToR6Q==}
     engines: {node: '>=12.22.0'}
+
+  ip-address@10.0.1:
+    resolution: {integrity: sha512-NWv9YLW4PoW2B7xtzaS3NCot75m6nK7Icdv0o3lfMceJVRfSoQwqD4wEH5rLwoKJwUiZ/rfpiVBhnaF0FK4HoA==}
+    engines: {node: '>= 12'}
 
   ip-address@10.1.0:
     resolution: {integrity: sha512-XXADHxXmvT9+CRxhXg56LJovE+bmWnEWB78LB83VZTprKTmaC5QfruXocxzTZ2Kl0DNwKuBdlIhjL8LeY8Sf8Q==}
@@ -7752,6 +7772,12 @@ snapshots:
     dependencies:
       '@types/ms': 2.1.0
 
+  '@types/express-rate-limit@6.0.2(express@4.21.2)':
+    dependencies:
+      express-rate-limit: 8.2.1(express@4.21.2)
+    transitivePeerDependencies:
+      - express
+
   '@types/express-serve-static-core@4.19.6':
     dependencies:
       '@types/node': 20.11.16
@@ -9465,6 +9491,11 @@ snapshots:
       jest-message-util: 29.7.0
       jest-util: 29.7.0
 
+  express-rate-limit@8.2.1(express@4.21.2):
+    dependencies:
+      express: 4.21.2
+      ip-address: 10.0.1
+
   express-winston@4.2.0(winston@3.17.0):
     dependencies:
       chalk: 2.4.2
@@ -10057,6 +10088,8 @@ snapshots:
       standard-as-callback: 2.1.0
     transitivePeerDependencies:
       - supports-color
+
+  ip-address@10.0.1: {}
 
   ip-address@10.1.0: {}
 

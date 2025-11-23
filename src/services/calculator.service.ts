@@ -8,8 +8,10 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { getRedisCache, generateMetricsCacheKey } from './redis-cache.service';
 
 const prisma = new PrismaClient();
+const cache = getRedisCache();
 
 export interface LacunaMetric {
   tema?: string;
@@ -41,105 +43,122 @@ export class MetricsCalculator {
    * Formula: Lacuna = (demandas_cidadaos - pls_tramitacao) / demandas_cidadaos * 100
    */
   async calculateLacunaByTheme(): Promise<LacunaMetric[]> {
-    try {
-      // Count citizen demands by theme (assuming PropostaPauta model exists in Prisma)
-      const demandas = await prisma.$queryRaw<Array<{ tema_principal: string; count: bigint }>>`
-        SELECT tema_principal, COUNT(*) as count
-        FROM propostas_pauta
-        WHERE tema_principal IS NOT NULL
-        GROUP BY tema_principal
-      `;
+    // Try to get from cache first (TTL: 1 hour = 3600 seconds)
+    const cacheKey = generateMetricsCacheKey('lacuna-theme', {});
+    
+    return cache.getOrSet(
+      cacheKey,
+      async () => {
+        try {
+          // Count citizen demands by theme (assuming PropostaPauta model exists in Prisma)
+          const demandas = await prisma.$queryRaw<Array<{ tema_principal: string; count: bigint }>>`
+            SELECT tema_principal, COUNT(*) as count
+            FROM propostas_pauta
+            WHERE tema_principal IS NOT NULL
+            GROUP BY tema_principal
+          `;
 
-      // Count PLs in tramitação by theme
-      const pls = await prisma.$queryRaw<Array<{ tema_principal: string; count: bigint }>>`
-        SELECT tema_principal, COUNT(*) as count
-        FROM projetos_lei
-        WHERE status = 'tramitacao' AND tema_principal IS NOT NULL
-        GROUP BY tema_principal
-      `;
+          // Count PLs in tramitação by theme
+          const pls = await prisma.$queryRaw<Array<{ tema_principal: string; count: bigint }>>`
+            SELECT tema_principal, COUNT(*) as count
+            FROM projetos_lei
+            WHERE status = 'tramitacao' AND tema_principal IS NOT NULL
+            GROUP BY tema_principal
+          `;
 
-      // Create lookup map for PLs
-      const plsMap = new Map<string, number>();
-      pls.forEach((pl) => {
-        plsMap.set(pl.tema_principal, Number(pl.count));
-      });
+          // Create lookup map for PLs
+          const plsMap = new Map<string, number>();
+          pls.forEach((pl) => {
+            plsMap.set(pl.tema_principal, Number(pl.count));
+          });
 
-      // Calculate lacuna for each theme
-      const results: LacunaMetric[] = demandas.map(({ tema_principal: tema, count }) => {
-        const demandasCount = Number(count);
-        const plsCount = plsMap.get(tema) || 0;
+          // Calculate lacuna for each theme
+          const results: LacunaMetric[] = demandas.map(({ tema_principal: tema, count }) => {
+            const demandasCount = Number(count);
+            const plsCount = plsMap.get(tema) || 0;
 
-        // Calculate lacuna percentage
-        let lacuna = 0;
-        if (demandasCount > 0) {
-          lacuna = ((demandasCount - plsCount) / demandasCount) * 100;
-          lacuna = Math.max(0, lacuna); // Ensure non-negative
+            // Calculate lacuna percentage
+            let lacuna = 0;
+            if (demandasCount > 0) {
+              lacuna = ((demandasCount - plsCount) / demandasCount) * 100;
+              lacuna = Math.max(0, lacuna); // Ensure non-negative
+            }
+
+            return {
+              tema,
+              demandasCidadaos: demandasCount,
+              plsTramitacao: plsCount,
+              percentualLacuna: Number(lacuna.toFixed(2)),
+              classificacao: this.classifyLacuna(lacuna),
+            };
+          });
+
+          return results.sort((a, b) => b.percentualLacuna - a.percentualLacuna);
+        } catch (error) {
+          console.error('Error calculating lacuna by theme:', error);
+          throw new Error('Failed to calculate lacuna by theme');
         }
-
-        return {
-          tema,
-          demandasCidadaos: demandasCount,
-          plsTramitacao: plsCount,
-          percentualLacuna: Number(lacuna.toFixed(2)),
-          classificacao: this.classifyLacuna(lacuna),
-        };
-      });
-
-      return results.sort((a, b) => b.percentualLacuna - a.percentualLacuna);
-    } catch (error) {
-      console.error('Error calculating lacuna by theme:', error);
-      throw new Error('Failed to calculate lacuna by theme');
-    }
+      },
+      3600, // Cache for 1 hour
+    );
   }
 
   /**
    * Calculate legislative gap by inclusion group (Mulheres, PCDs, LGBTQIA+, etc.)
    */
   async calculateLacunaByGroup(): Promise<LacunaMetric[]> {
-    try {
-      // Count citizen demands by group
-      const demandas = await prisma.$queryRaw<Array<{ grupo_inclusao: string; count: bigint }>>`
-        SELECT grupo_inclusao, COUNT(*) as count
-        FROM propostas_pauta
-        WHERE grupo_inclusao IS NOT NULL
-        GROUP BY grupo_inclusao
-      `;
+    const cacheKey = generateMetricsCacheKey('lacuna-group', {});
+    
+    return cache.getOrSet(
+      cacheKey,
+      async () => {
+        try {
+          // Count citizen demands by group
+          const demandas = await prisma.$queryRaw<Array<{ grupo_inclusao: string; count: bigint }>>`
+            SELECT grupo_inclusao, COUNT(*) as count
+            FROM propostas_pauta
+            WHERE grupo_inclusao IS NOT NULL
+            GROUP BY grupo_inclusao
+          `;
 
-      // Get PLs count (we'll need to match by metadata or other logic)
-      // For now, using a simplified approach
-      const totalPls = await prisma.$queryRaw<Array<{ count: bigint }>>`
-        SELECT COUNT(*) as count
-        FROM projetos_lei
-        WHERE status = 'tramitacao'
-      `;
+          // Get PLs count (we'll need to match by metadata or other logic)
+          // For now, using a simplified approach
+          const totalPls = await prisma.$queryRaw<Array<{ count: bigint }>>`
+            SELECT COUNT(*) as count
+            FROM projetos_lei
+            WHERE status = 'tramitacao'
+          `;
 
-      const totalPlsCount = Number(totalPls[0]?.count || 0);
+          const totalPlsCount = Number(totalPls[0]?.count || 0);
 
-      const results: LacunaMetric[] = demandas.map(({ grupo_inclusao: grupo, count }) => {
-        const demandasCount = Number(count);
-        // Simplified: distribute PLs proportionally (this can be improved)
-        const plsCount = Math.floor(totalPlsCount / demandas.length);
+          const results: LacunaMetric[] = demandas.map(({ grupo_inclusao: grupo, count }) => {
+            const demandasCount = Number(count);
+            // Simplified: distribute PLs proportionally (this can be improved)
+            const plsCount = Math.floor(totalPlsCount / demandas.length);
 
-        let lacuna = 0;
-        if (demandasCount > 0) {
-          lacuna = ((demandasCount - plsCount) / demandasCount) * 100;
-          lacuna = Math.max(0, lacuna);
+            let lacuna = 0;
+            if (demandasCount > 0) {
+              lacuna = ((demandasCount - plsCount) / demandasCount) * 100;
+              lacuna = Math.max(0, lacuna);
+            }
+
+            return {
+              grupo,
+              demandasCidadaos: demandasCount,
+              plsTramitacao: plsCount,
+              percentualLacuna: Number(lacuna.toFixed(2)),
+              classificacao: this.classifyLacuna(lacuna),
+            };
+          });
+
+          return results.sort((a, b) => b.percentualLacuna - a.percentualLacuna);
+        } catch (error) {
+          console.error('Error calculating lacuna by group:', error);
+          throw new Error('Failed to calculate lacuna by group');
         }
-
-        return {
-          grupo,
-          demandasCidadaos: demandasCount,
-          plsTramitacao: plsCount,
-          percentualLacuna: Number(lacuna.toFixed(2)),
-          classificacao: this.classifyLacuna(lacuna),
-        };
-      });
-
-      return results.sort((a, b) => b.percentualLacuna - a.percentualLacuna);
-    } catch (error) {
-      console.error('Error calculating lacuna by group:', error);
-      throw new Error('Failed to calculate lacuna by group');
-    }
+      },
+      3600, // Cache for 1 hour
+    );
   }
 
   /**

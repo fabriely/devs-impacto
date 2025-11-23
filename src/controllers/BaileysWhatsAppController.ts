@@ -10,13 +10,16 @@ import type { WAMessage } from 'baileys';
 import whatsappService from '../services/whatsapp.service';
 import openaiService from '../services/openai.service';
 import plCurationService from '../services/pl-curation.service';
+import whatsappIntegration from '../services/whatsapp-integration.service';
 
 interface WhatsAppSession {
-  step: 'idle' | 'waiting_question' | 'waiting_opinion' | 'waiting_area_selection' | 'waiting_curation_audio_choice';
+  step: 'idle' | 'waiting_question' | 'waiting_opinion' | 'waiting_area_selection' | 'waiting_curation_audio_choice' | 'waiting_proposal' | 'waiting_city_info' | 'waiting_group_info';
   plSummary?: string;
   plNumber?: string;
   selectedArea?: string;
   curationPLs?: Array<{ numero: string; ano: string; ementa: string; citizenSummary: string }>;
+  proposalContent?: string;
+  userName?: string;
 }
 
 // Armazena o estado da conversa de cada usuário
@@ -139,7 +142,9 @@ class BaileysWhatsAppController {
         } else if (textLower === '4') {
           await this.showAreaSelectionMenu(jid, phoneNumber);
         } else if (textLower === '5') {
-          await whatsappService.sendText(jid, 'Dashboard público em breve! 🏗️');
+          await this.startProposalFlow(jid, phoneNumber, userName);
+        } else if (textLower === '6') {
+          await whatsappService.sendText(jid, '📊 Dashboard público: https://dashboard.devsimpacto.com.br (em breve!)');
           await this.sendWelcomeMessage(jid, userName);
         } else {
           // Comando não reconhecido, mostra menu novamente
@@ -153,6 +158,18 @@ class BaileysWhatsAppController {
 
       case 'waiting_opinion':
         await this.handleOpinion(jid, text, session, phoneNumber);
+        break;
+
+      case 'waiting_proposal':
+        await this.handleProposal(jid, text, session, phoneNumber);
+        break;
+
+      case 'waiting_city_info':
+        await this.handleCityInfo(jid, text, session, phoneNumber);
+        break;
+
+      case 'waiting_group_info':
+        await this.handleGroupInfo(jid, text, session, phoneNumber);
         break;
 
       case 'waiting_area_selection':
@@ -178,6 +195,8 @@ class BaileysWhatsAppController {
     jid: string,
   ): Promise<void> {
     try {
+      const session = this.getSession(phoneNumber);
+      
       await whatsappService.sendText(jid, '🎧 Recebendo seu áudio... Um momento!');
 
       // Baixa o áudio usando downloadMediaMessage do Baileys
@@ -190,7 +209,42 @@ class BaileysWhatsAppController {
 
       await whatsappService.sendText(jid, `📝 Você disse: "${transcription}"`);
 
-      // Processa o texto transcrito
+      // Se estiver esperando proposta, processa como proposta de áudio
+      if (session.step === 'waiting_proposal') {
+        await whatsappService.sendText(jid, '🤖 Analisando sua proposta em áudio com IA...');
+
+        // 📊 INTEGRAÇÃO: Processa proposta de áudio
+        const result = await whatsappIntegration.processCitizenProposal({
+          phoneNumber,
+          content: transcription,
+          isAudioTranscription: true,
+          // audioUrl: TODO: Upload para S3 e salvar URL
+          userName,
+        });
+
+        if (result) {
+          const { classification } = result;
+          
+          let responseMessage = `✅ *Proposta em áudio recebida!*\n\n`;
+          responseMessage += `📊 *Análise da IA:*\n`;
+          responseMessage += `• Tema Principal: *${classification.temaPrincipal}*\n`;
+          
+          if (classification.temasSecundarios.length > 0) {
+            responseMessage += `• Temas Relacionados: ${classification.temasSecundarios.join(', ')}\n`;
+          }
+          
+          responseMessage += `• Confiança: ${(classification.confidenceScore * 100).toFixed(0)}%\n\n`;
+          responseMessage += `🎯 Sua proposta foi registrada e será analisada!`;
+
+          await whatsappService.sendText(jid, responseMessage);
+        }
+
+        // Continua fluxo perguntando cidade
+        await this.askCityInfo(jid, phoneNumber);
+        return;
+      }
+
+      // Caso contrário, processa como texto normal
       await this.handleTextMessage(phoneNumber, transcription, userName, jid);
     } catch (error) {
       console.error('❌ Erro ao processar áudio:', error);
@@ -217,7 +271,8 @@ Estou aqui para te ajudar a entender Projetos de Lei de forma simples e particip
 2️⃣ Fazer pergunta sobre PL 
 3️⃣ Registrar opinião
 4️⃣ Gerar curadoria de PLs
-5️⃣ Ver dashboard público
+5️⃣ 💡 Enviar minha proposta
+6️⃣ Ver dashboard público
 
 Digite o número da opção ou envie uma mensagem de *áudio* que eu entendo! 🎙️`;
 
@@ -255,6 +310,13 @@ Digite o número da opção ou envie uma mensagem de *áudio* que eu entendo! �
       session.plNumber = plNumber;
       session.plSummary = summary;
       session.step = 'waiting_question';
+
+      // 📊 INTEGRAÇÃO: Registra visualização do PL
+      await whatsappIntegration.trackPLVisualization({
+        phoneNumber,
+        plNumber,
+        userName: session.plNumber, // TODO: capturar userName real
+      });
 
       // Envia resumo
       await whatsappService.sendText(jid, `📋 *${plNumber}*\n\n${summary}`);
@@ -307,6 +369,16 @@ Digite o número da opção ou envie uma mensagem de *áudio* que eu entendo! �
         return;
       }
 
+      // 📊 INTEGRAÇÃO: Registra pergunta sobre PL
+      const phoneNumber = jid.replace('@s.whatsapp.net', '').replace('@lid', '');
+      if (session.plNumber) {
+        await whatsappIntegration.trackPLQuestion({
+          phoneNumber,
+          plNumber: session.plNumber,
+          question,
+        });
+      }
+
       await whatsappService.sendText(jid, '🤔 Pensando na resposta...');
 
       const answer = await openaiService.answerQuestion(session.plSummary, question);
@@ -356,18 +428,31 @@ Digite o número da opção ou envie uma mensagem de *áudio* que eu entendo! �
   ): Promise<void> {
     const opinionLower = opinion.toLowerCase().trim();
 
+    let opinionValue: 'a_favor' | 'contra' | 'pular' = 'pular';
+
     if (opinionLower.includes('favor') || opinionLower === '👍' || opinionLower === '1') {
+      opinionValue = 'a_favor';
       await whatsappService.sendText(
         jid,
         '✅ Opinião registrada: A FAVOR\n\nSua participação é muito importante! 🙌',
       );
     } else if (opinionLower.includes('contra') || opinionLower === '👎' || opinionLower === '2') {
+      opinionValue = 'contra';
       await whatsappService.sendText(
         jid,
         '✅ Opinião registrada: CONTRA\n\nSua participação é muito importante! 🙌',
       );
     } else {
       await whatsappService.sendText(jid, '⏭️ Ok, vamos para o próximo!');
+    }
+
+    // 📊 INTEGRAÇÃO: Registra opinião sobre PL
+    if (session.plNumber) {
+      await whatsappIntegration.trackPLOpinion({
+        phoneNumber,
+        plNumber: session.plNumber,
+        opinion: opinionValue,
+      });
     }
 
     const updatedSession: WhatsAppSession = { ...session, step: 'idle' };
@@ -736,6 +821,213 @@ Digite o número da área que você quer acompanhar:`;
       connected: whatsappService.connected,
       message: whatsappService.connected ? 'Conectado' : 'Desconectado',
     });
+  }
+
+  /**
+   * Inicia fluxo de envio de proposta
+   */
+  private async startProposalFlow(jid: string, phoneNumber: string, userName: string): Promise<void> {
+    const session = this.getSession(phoneNumber);
+    session.step = 'waiting_proposal';
+    session.userName = userName;
+    userSessions.set(phoneNumber, session);
+
+    const message = `💡 *Envie sua proposta!*
+
+Você pode nos enviar uma sugestão de lei ou melhoria que gostaria de ver na sua cidade.
+
+📝 Escreva sua proposta em texto ou envie um *áudio* explicando sua ideia.
+
+Exemplos:
+• "Precisamos de mais ciclovias na cidade"
+• "Quero mais segurança nas escolas"
+• "Precisamos de postos de saúde nos bairros"
+
+*Aguardo sua proposta!* ✨`;
+
+    await whatsappService.sendText(jid, message);
+
+    // 📊 INTEGRAÇÃO: Registra início do fluxo
+    await whatsappIntegration.trackGeneralInteraction({
+      phoneNumber,
+      action: 'iniciar_proposta',
+      content: 'Iniciou fluxo de envio de proposta',
+      userName,
+    });
+  }
+
+  /**
+   * Processa proposta do cidadão
+   */
+  private async handleProposal(
+    jid: string,
+    proposal: string,
+    session: WhatsAppSession,
+    phoneNumber: string,
+  ): Promise<void> {
+    try {
+      await whatsappService.sendText(jid, '🤖 Analisando sua proposta com IA...');
+
+      const updatedSession = { ...session, proposalContent: proposal };
+      userSessions.set(phoneNumber, updatedSession);
+
+      // 📊 INTEGRAÇÃO: Processa e classifica proposta
+      const result = await whatsappIntegration.processCitizenProposal({
+        phoneNumber,
+        content: proposal,
+        isAudioTranscription: false,
+        userName: session.userName,
+      });
+
+      if (result) {
+        const { classification } = result;
+        
+        let responseMessage = `✅ *Proposta recebida com sucesso!*\n\n`;
+        responseMessage += `📊 *Análise da IA:*\n`;
+        responseMessage += `• Tema Principal: *${classification.temaPrincipal}*\n`;
+        
+        if (classification.temasSecundarios.length > 0) {
+          responseMessage += `• Temas Relacionados: ${classification.temasSecundarios.join(', ')}\n`;
+        }
+        
+        responseMessage += `• Confiança: ${(classification.confidenceScore * 100).toFixed(0)}%\n\n`;
+        responseMessage += `🎯 Sua proposta foi registrada e será analisada por nossa equipe!\n\n`;
+        responseMessage += `📊 Você pode acompanhar o impacto da sua sugestão no dashboard público.`;
+
+        await whatsappService.sendText(jid, responseMessage);
+      } else {
+        await whatsappService.sendText(
+          jid,
+          '✅ Proposta recebida! Ela será analisada por nossa equipe.',
+        );
+      }
+
+      // Pergunta se quer informar cidade
+      await this.askCityInfo(jid, phoneNumber);
+    } catch (error) {
+      console.error('❌ Erro ao processar proposta:', error);
+      await whatsappService.sendText(jid, '❌ Erro ao processar sua proposta. Tente novamente.');
+      
+      const updatedSession: WhatsAppSession = { ...session, step: 'idle' };
+      userSessions.set(phoneNumber, updatedSession);
+      await this.sendWelcomeMessage(jid, session.userName || 'Cidadão');
+    }
+  }
+
+  /**
+   * Pergunta cidade do cidadão
+   */
+  private async askCityInfo(jid: string, phoneNumber: string): Promise<void> {
+    const session = this.getSession(phoneNumber);
+    session.step = 'waiting_city_info';
+    userSessions.set(phoneNumber, session);
+
+    const message = `📍 *Qual é a sua cidade?*
+
+Isso nos ajuda a entender melhor as demandas de cada região.
+
+Digite o nome da sua cidade (ex: São Paulo, Rio de Janeiro)
+
+Ou digite *"pular"* se preferir não informar.`;
+
+    await whatsappService.sendText(jid, message);
+  }
+
+  /**
+   * Processa informação de cidade
+   */
+  private async handleCityInfo(
+    jid: string,
+    cityInfo: string,
+    session: WhatsAppSession,
+    phoneNumber: string,
+  ): Promise<void> {
+    const cityLower = cityInfo.toLowerCase().trim();
+
+    if (cityLower === 'pular') {
+      await whatsappService.sendText(jid, '⏭️ Tudo bem, vamos continuar!');
+    } else {
+      await whatsappService.sendText(jid, `✅ Cidade registrada: *${cityInfo}*`);
+      
+      // TODO: Atualizar cidade no banco de dados
+      await whatsappIntegration.trackGeneralInteraction({
+        phoneNumber,
+        action: 'informar_cidade',
+        content: cityInfo,
+      });
+    }
+
+    // Pergunta sobre grupo de inclusão
+    await this.askGroupInfo(jid, phoneNumber);
+  }
+
+  /**
+   * Pergunta grupo de inclusão
+   */
+  private async askGroupInfo(jid: string, phoneNumber: string): Promise<void> {
+    const session = this.getSession(phoneNumber);
+    session.step = 'waiting_group_info';
+    userSessions.set(phoneNumber, session);
+
+    const message = `👥 *Você se identifica com algum grupo?*
+
+Isso nos ajuda a entender e dar voz a diferentes comunidades:
+
+1️⃣ Mulheres
+2️⃣ PCDs (Pessoas com Deficiência)
+3️⃣ LGBTQIA+
+4️⃣ Idosos
+5️⃣ Jovens
+6️⃣ Outro
+7️⃣ Prefiro não informar
+
+Digite o número da opção:`;
+
+    await whatsappService.sendText(jid, message);
+  }
+
+  /**
+   * Processa informação de grupo
+   */
+  private async handleGroupInfo(
+    jid: string,
+    groupInfo: string,
+    session: WhatsAppSession,
+    phoneNumber: string,
+  ): Promise<void> {
+    const groupMap: Record<string, string> = {
+      '1': 'Mulheres',
+      '2': 'PCDs',
+      '3': 'LGBTQIA+',
+      '4': 'Idosos',
+      '5': 'Jovens',
+      '6': 'Outro',
+      '7': 'Não informado',
+    };
+
+    const group = groupMap[groupInfo.trim()] ?? 'Não informado';
+
+    if (group === 'Não informado') {
+      await whatsappService.sendText(jid, '⏭️ Tudo bem!');
+    } else {
+      await whatsappService.sendText(jid, `✅ Grupo registrado: *${group}*`);
+      
+      await whatsappIntegration.trackGeneralInteraction({
+        phoneNumber,
+        action: 'informar_grupo',
+        content: group,
+      });
+    }
+
+    // Finaliza e volta ao menu
+    await whatsappService.sendText(
+      jid,
+      '🙌 *Obrigado por participar!*\n\nSua voz é fundamental para uma democracia mais forte e inclusiva.',
+    );
+
+    const updatedSession: WhatsAppSession = { ...session, step: 'idle' };
+    userSessions.set(phoneNumber, updatedSession);
+    await this.sendWelcomeMessage(jid, session.userName || 'Cidadão');
   }
 }
 

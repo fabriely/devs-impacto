@@ -5,6 +5,8 @@ import MetricsRoutes from './MetricsRoutes';
 import ClassifierRoutes from './ClassifierRoutes';
 import ProcessorRoutes from './ProcessorRoutes';
 import PLCurationRoutes from './CuradoriaRoutes';
+import ProposalsRoutes from './ProposalsRoutes';
+import WebhookRoutes from './WebhookRoutes';
 
 const router = Router();
 
@@ -15,6 +17,10 @@ router.use('/api/baileys/', BaileysWhatsAppRoutes);
 router.use('/api/metrics', MetricsRoutes);
 router.use('/api/classifier', ClassifierRoutes);
 router.use('/api/processor', ProcessorRoutes);
+router.use('/api/proposals', ProposalsRoutes);
+
+// Webhooks externos
+router.use('/api/webhooks', WebhookRoutes);
 
 // Rotas de curadoria de PLs
 router.use('/api/pls/', PLCurationRoutes);

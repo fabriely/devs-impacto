@@ -13,7 +13,12 @@ export class RedisCacheService {
   private isConnected = false;
 
   constructor() {
-    const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+    // Usa REDIS_URL se definido, caso contrário constrói a partir de REDIS_HOST e REDIS_PORT
+    const redisHost = process.env.REDIS_HOST || 'localhost';
+    const redisPort = process.env.REDIS_PORT || '6379';
+    const redisUrl = process.env.REDIS_URL || `redis://${redisHost}:${redisPort}`;
+    
+    console.log(`🔄 Conectando ao Redis: ${redisUrl}`);
     
     this.client = new Redis(redisUrl, {
       maxRetriesPerRequest: 3,

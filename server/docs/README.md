@@ -62,7 +62,7 @@ Documentos na raiz do projeto:
 
 ### Se você é **jurado/avaliador**:
 1. Leia [Para Jurados](../PARA_JURADOS.md)
-2. Acesse o [Dashboard](http://localhost:3000) após setup
+2. Acesse o [Dashboard](https://devs-impacto.vercel.app/) após setup
 
 ---
 

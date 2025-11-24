@@ -144,7 +144,7 @@ class BaileysWhatsAppController {
         } else if (textLower === '5') {
           await this.startProposalFlow(jid, phoneNumber, userName);
         } else if (textLower === '6') {
-          await whatsappService.sendText(jid, '📊 Dashboard público: https://dashboard.devsimpacto.com.br (em breve!)');
+          await whatsappService.sendText(jid, '📊 Dashboard público: https://devs-impacto.vercel.app/');
           await this.sendWelcomeMessage(jid, userName);
         } else {
           // Comando não reconhecido, mostra menu novamente

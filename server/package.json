@@ -58,6 +58,7 @@
     "curation:test": "tsx src/examples/curation-examples.ts",
     "curation:run": "curl -X POST http://localhost:3001/api/pls/cron/run-curation",
     "twitter:test": "tsx src/examples/twitter-examples.ts",
+    "twitter:test-simple": "tsx src/examples/twitter-examples-simple.ts",
     "twitter:status": "curl http://localhost:3001/api/twitter/status",
     "lint": "eslint ./src --ext .ts",
     "lint:fix": "eslint ./src --ext .ts --fix",
